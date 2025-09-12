@@ -5,16 +5,24 @@ import ballerinax/postgresql;
 import ballerinax/postgresql.driver as _;
 import ballerina/sql;
 import ballerina/crypto;
+import ballerina/data.jsondata;
+import ballerina/lang.value;
+
+configurable int port = ?;
+configurable string db_host = ?;
+configurable string db_username = ?;
+configurable string db_password = ?;
+configurable string db_name = ?;
 
 type User record {
-    readonly int id;
+    readonly string id;
     string name;
     string email;
     string password;
 };
 
 type UserDTO record {
-    readonly int id;
+    readonly string id;
     string name;
     string email;
 };
@@ -62,17 +70,65 @@ string publicKey = "282386943136351650900639271896622539368668649274605745825067
 
 table <User> key(id) users = table[];
 
-postgresql:Client userClientDb = check new("localhost","user_service","user_service_password", "ignitegym", 5432);
+postgresql:Client userClientDb = check new(db_host,db_username,db_password, db_name , 5432);
 
-# A service representing a network-accessible API
-# bound to port `9090`.
-service /users on new http:Listener(9090) {
+http:Client authClient = check new ("http://localhost:8090");
+service class RequestInterceptor {
+    *http:RequestInterceptor;
+
+    resource function 'default [string... path](
+            http:RequestContext ctx, http:Request req)
+        returns http:NotImplemented|http:Unauthorized|http:NextService|error? {
+        string[] headers =   req.getHeaderNames();
+
+        var authorization = headers.filter(item => item.equalsIgnoreCaseAscii("authorization")).length(); 
+
+        if authorization < 1 { 
+            return http:UNAUTHORIZED;
+        }
+
+        string authorizationData = check req.getHeader("authorization");
+                
+        http:Response|http:ClientError test =  authClient->/api/collections/users/auth\-refresh.post({}, {Authorization: authorizationData});
+
+        if test is http:ClientError {
+            return http:UNAUTHORIZED;
+        }
+
+        if test.statusCode != 200 {
+            return http:UNAUTHORIZED;
+        }
 
 
-    resource function post valid(UserValid data) returns UserOK|UserNotFound|BadRequestError|error  {
-        io:println("initial data", data);
+        json|http:ClientError data =  test.getJsonPayload();
+        if data is http:ClientError {
+            return http:UNAUTHORIZED;
+        }
+        json|error userData =  jsondata:read(data, `$.record`);
+        if userData is error {
+            return http:UNAUTHORIZED;
+        }
+         
+        string|error userId =  value:ensureType(userData.id, string);
+        if userId is error {
+            return http:UNAUTHORIZED;
+        }
+        req.setHeader("x_user_id", userId);
+      
+        return ctx.next();
+    }
+}
 
-       
+
+service http:InterceptableService /users on new http:Listener(port) {
+
+    public function createInterceptors() returns [RequestInterceptor] {
+        return [new RequestInterceptor()];
+    }
+
+    resource function post valid(@http:Header string x_user_id, UserValid data) returns UserOK|UserNotFound|BadRequestError|error  {
+              
+        io:print(x_user_id); 
         byte[]|error output =  crypto:hmacSha256(data.password.toBytes(), publicKey.toBytes());
         
         if output is error {

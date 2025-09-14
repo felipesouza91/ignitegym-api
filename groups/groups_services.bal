@@ -1,5 +1,4 @@
 import ballerina/http;
-
 import ballerinax/postgresql;
 import ballerinax/postgresql.driver as _;
 import ballerina/sql;

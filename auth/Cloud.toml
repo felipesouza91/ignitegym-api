@@ -1,0 +1,4 @@
+[container.image]
+repository="felipedb91"
+name="ignitegym-api-auth" 
+tag="v0.0.1" 

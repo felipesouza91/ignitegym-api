@@ -1,12 +1,12 @@
+import ballerina/crypto;
+import ballerina/data.jsondata;
 import ballerina/http;
 import ballerina/io;
+import ballerina/lang.value;
+import ballerina/sql;
 import ballerina/time;
 import ballerinax/postgresql;
 import ballerinax/postgresql.driver as _;
-import ballerina/sql;
-import ballerina/crypto;
-import ballerina/data.jsondata;
-import ballerina/lang.value;
 
 configurable int port = ?;
 configurable string db_host = ?;
@@ -39,13 +39,12 @@ type UpdateUser record {
     string newPassword;
 };
 
-
-type UserValid record{
+type UserValid record {
     string email;
     string password;
 };
 
-type  ErrorDetails record {
+type ErrorDetails record {
     string message;
     string details;
     string timeStamp;
@@ -68,28 +67,29 @@ type UserOK record {|
 
 string publicKey = "2823869431363516509006392718966225393686686492746057458250676423225088364271327327657813178602773210";
 
-table <User> key(id) users = table[];
+table<User> key(id) users = table [];
 
-postgresql:Client userClientDb = check new(db_host,db_username,db_password, db_name , 5432);
+postgresql:Client userClientDb = check new (db_host, db_username, db_password, db_name, 5432);
 
 http:Client authClient = check new ("http://localhost:8090");
+
 service class RequestInterceptor {
     *http:RequestInterceptor;
 
     resource function 'default [string... path](
             http:RequestContext ctx, http:Request req)
         returns http:NotImplemented|http:Unauthorized|http:NextService|error? {
-        string[] headers =   req.getHeaderNames();
+        string[] headers = req.getHeaderNames();
 
-        var authorization = headers.filter(item => item.equalsIgnoreCaseAscii("authorization")).length(); 
+        var authorization = headers.filter(item => item.equalsIgnoreCaseAscii("authorization")).length();
 
-        if authorization < 1 { 
+        if authorization < 1 {
             return http:UNAUTHORIZED;
         }
 
         string authorizationData = check req.getHeader("authorization");
-                
-        http:Response|http:ClientError test =  authClient->/api/collections/users/auth\-refresh.post({}, {Authorization: authorizationData});
+
+        http:Response|http:ClientError test = authClient->/api/collections/users/auth\-refresh.post({}, {Authorization: authorizationData});
 
         if test is http:ClientError {
             return http:UNAUTHORIZED;
@@ -99,26 +99,24 @@ service class RequestInterceptor {
             return http:UNAUTHORIZED;
         }
 
-
-        json|http:ClientError data =  test.getJsonPayload();
+        json|http:ClientError data = test.getJsonPayload();
         if data is http:ClientError {
             return http:UNAUTHORIZED;
         }
-        json|error userData =  jsondata:read(data, `$.record`);
+        json|error userData = jsondata:read(data, `$.record`);
         if userData is error {
             return http:UNAUTHORIZED;
         }
-         
-        string|error userId =  value:ensureType(userData.id, string);
+
+        string|error userId = value:ensureType(userData.id, string);
         if userId is error {
             return http:UNAUTHORIZED;
         }
         req.setHeader("x_user_id", userId);
-      
+
         return ctx.next();
     }
 }
-
 
 service http:InterceptableService /users on new http:Listener(port) {
 
@@ -126,79 +124,10 @@ service http:InterceptableService /users on new http:Listener(port) {
         return [new RequestInterceptor()];
     }
 
-    resource function post valid(@http:Header string x_user_id, UserValid data) returns UserOK|UserNotFound|BadRequestError|error  {
-              
-        io:print(x_user_id); 
-        byte[]|error output =  crypto:hmacSha256(data.password.toBytes(), publicKey.toBytes());
-        
-        if output is error {
+    resource function put .(UpdateUser data) returns UserOK|UserNotFound|BadRequestError|error {
 
+        if data.name.length() < 1 || data.oldPassword.length() < 1 || data.newPassword.length() < 1 {
             BadRequestError badRequest = {
-                body: {message: "User not found", details: "User not found", timeStamp: time:utcToString(time:utcNow())}
-            };
-            return badRequest;
-        }
-
-        stream<User, sql:Error?>  result =  userClientDb->query(`SELECT * FROM USERS WHERE EMAIL = ${data.email} AND PASSWORD = ${output.toBase16()}`);
-
-        var user = check result.next();
-    
-        if user is () {
-            UserNotFound userNotFound = {
-                body: {message: "User not found", details: "User not found", timeStamp: time:utcToString(time:utcNow())}
-            };
-            return userNotFound;
-        }       
-        
-        return {
-           body: {
-                id: user.value.id,
-                name: user.value.name,
-                email: user.value.email
-            }
-        };
-    };
-
-    resource function post .(InputUser input) returns http:Created|BadRequestError|error {
-
-        stream<User, sql:Error?>  userExitsResult =  userClientDb->query(`SELECT * FROM USERS WHERE EMAIL = ${input.email}`);
-
-        var userExists = check userExitsResult.next();
-
-        if userExists != ()  {
-            BadRequestError badRequest = {
-                body: {message: "User validation", details: "Email already exits.", timeStamp: time:utcToString(time:utcNow())}
-            };
-            return badRequest;
-        }  
-        
-        byte[]|error output =  crypto:hmacSha256(input.password.toBytes(), publicKey.toBytes());
-        
-        if output is error {
-            io:println(output.message());
-            BadRequestError badRequest = {
-                body: {message: "Create User Error", details: "Error during create user", timeStamp: time:utcToString(time:utcNow())}
-            };
-            return badRequest;
-        }
-
-        sql:ParameterizedQuery query = `INSERT INTO USERS(NAME, EMAIL, PASSWORD) VALUES(${input.name}, ${input.email}, ${output.toBase16()})`;
-        sql:ExecutionResult|error result =   userClientDb->execute(query);
-
-        if result is sql:ExecutionResult {
-            return http:CREATED;
-        }
-        BadRequestError badRequest = {
-                body: {message: "Create User Error", details: "Error during create user", timeStamp: time:utcToString(time:utcNow())}
-            };
-        return badRequest;
-    };
-
-    resource function put .(UpdateUser data) returns UserOK|UserNotFound|BadRequestError|error{
-
-
-        if data.name.length() < 1 || data.oldPassword.length() < 1  || data.newPassword.length() < 1  {
-             BadRequestError badRequest = {
                 body: {message: "Validation Error", details: "Fields name, oldPassword and newPassword are required", timeStamp: time:utcToString(time:utcNow())}
             };
             return badRequest;
@@ -206,13 +135,13 @@ service http:InterceptableService /users on new http:Listener(port) {
 
         int user_id = 1;
 
-        byte[] oldPasswordEncode = check  crypto:hmacSha256(data.oldPassword.toBytes(), publicKey.toBytes());
+        byte[] oldPasswordEncode = check crypto:hmacSha256(data.oldPassword.toBytes(), publicKey.toBytes());
 
-        stream<User, sql:Error?>  userOldPasssowrdresult =  userClientDb->query(`SELECT * FROM USERS WHERE id = ${user_id}`);
+        stream<User, sql:Error?> userOldPasssowrdresult = userClientDb->query(`SELECT * FROM USERS WHERE id = ${user_id}`);
 
         var user = check userOldPasssowrdresult.next();
-    
-        if user is ()  {
+
+        if user is () {
             UserNotFound userNotFound = {
                 body: {message: "Validation Error", details: "Username/password invalid", timeStamp: time:utcToString(time:utcNow())}
             };
@@ -222,17 +151,16 @@ service http:InterceptableService /users on new http:Listener(port) {
         io:println(oldPasswordEncode.toBase16());
         io:println(user.value.password == oldPasswordEncode.toBase16());
         if user.value.password != oldPasswordEncode.toBase16() {
-             BadRequestError badRequest = {
+            BadRequestError badRequest = {
                 body: {message: "Validation Error", details: "Username/password invalid", timeStamp: time:utcToString(time:utcNow())}
             };
             return badRequest;
         }
 
-        byte[] newPasswordEncoded = check  crypto:hmacSha256(data.newPassword.toBytes(), publicKey.toBytes());
-
+        byte[] newPasswordEncoded = check crypto:hmacSha256(data.newPassword.toBytes(), publicKey.toBytes());
 
         sql:ParameterizedQuery query = `UPDATE USERS SET NAME = ${data.name}, PASSWORD = ${newPasswordEncoded.toBase16()} WHERE ID = ${user_id}`;
-        sql:ExecutionResult|error result =   userClientDb->execute(query);
+        sql:ExecutionResult|error result = userClientDb->execute(query);
 
         if result is sql:ExecutionResult {
             return {
@@ -246,5 +174,5 @@ service http:InterceptableService /users on new http:Listener(port) {
         return badRequest;
     }
 
-   
 };
+

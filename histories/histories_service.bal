@@ -1,5 +1,8 @@
+import ballerina/data.jsondata;
 import ballerina/http;
 import ballerina/io;
+import ballerina/lang.value;
+import ballerina/os;
 import ballerina/sql;
 import ballerina/time;
 import ballerinax/postgresql;
@@ -53,12 +56,13 @@ type Exercise record {
 };
 
 configurable int port = ?;
-configurable string db_host = ?;
-configurable string db_username = ?;
-configurable string db_password = ?;
-configurable string db_name = ?;
+string db_host = os:getEnv("DATABASE_HOST");
+string db_username = os:getEnv("DATABASE_USERNAME");
+string db_password = os:getEnv("DATABASE_PASSWORD");
+string db_name = os:getEnv("DATABASE_NAME");
+string auth_url = os:getEnv("AUTH_URL");
 
-http:Client authClient = check new ("http://localhost:8090");
+http:Client authClient = check new (auth_url);
 
 service class RequestInterceptor {
     *http:RequestInterceptor;
@@ -76,30 +80,37 @@ service class RequestInterceptor {
 
         string authorizationData = check req.getHeader("authorization");
 
-        // http:Response|http:ClientError test =  authClient->/api/collections/users/auth\-refresh.post({}, {Authorization: authorizationData});
+        http:Response|http:ClientError test = authClient->/auth/valid.post({}, {Authorization: authorizationData});
+        if test is http:ClientError {
+            io:println(test);
+            return http:UNAUTHORIZED;
+        }
 
-        // if test is http:ClientError {
-        //     return http:UNAUTHORIZED;
-        // }
+        if test.statusCode != 200 {
+            io:println(test);
+            return http:UNAUTHORIZED;
+        }
 
-        // if test.statusCode != 200 {
-        //     return http:UNAUTHORIZED;
-        // }
+        json|http:ClientError data = test.getJsonPayload();
+        if data is http:ClientError {
+            io:println(data);
 
-        // json|http:ClientError data =  test.getJsonPayload();
-        // if data is http:ClientError {
-        //     return http:UNAUTHORIZED;
-        // }
-        // json|error userData =  jsondata:read(data, `$.record`);
-        // if userData is error {
-        //     return http:UNAUTHORIZED;
-        // }
+            return http:UNAUTHORIZED;
+        }
+        io:print(data);
+        json|error userData = jsondata:read(data, `$`);
+        if userData is error {
+            io:println(userData);
 
-        // string|error userId =  value:ensureType(userData.id, string);
-        // if userId is error {
-        //     return http:UNAUTHORIZED;
-        // }
-        var userId = "1";
+            return http:UNAUTHORIZED;
+        }
+
+        string|error userId = value:ensureType(userData.sub, string);
+        if userId is error {
+            io:println(userId);
+
+            return http:UNAUTHORIZED;
+        }
         req.setHeader("x_user_id", userId);
 
         return ctx.next();

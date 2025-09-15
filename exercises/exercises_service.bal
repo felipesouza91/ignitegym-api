@@ -2,6 +2,7 @@ import ballerina/data.jsondata;
 import ballerina/http;
 import ballerina/io;
 import ballerina/lang.value;
+import ballerina/os;
 import ballerina/sql;
 import ballerina/time;
 import ballerinax/postgresql;
@@ -48,11 +49,11 @@ type ErrorDetails record {
 };
 
 configurable int port = ?;
-configurable string db_host = ?;
-configurable string db_username = ?;
-configurable string db_password = ?;
-configurable string db_name = ?;
-configurable string auth_url = ?;
+string db_host = os:getEnv("DATABASE_HOST");
+string db_username = os:getEnv("DATABASE_USERNAME");
+string db_password = os:getEnv("DATABASE_PASSWORD");
+string db_name = os:getEnv("DATABASE_NAME");
+string auth_url = os:getEnv("AUTH_URL");
 
 http:Client authClient = check new (auth_url);
 

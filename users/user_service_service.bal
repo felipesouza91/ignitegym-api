@@ -3,16 +3,18 @@ import ballerina/data.jsondata;
 import ballerina/http;
 import ballerina/io;
 import ballerina/lang.value;
+import ballerina/os;
 import ballerina/sql;
 import ballerina/time;
 import ballerinax/postgresql;
 import ballerinax/postgresql.driver as _;
 
 configurable int port = ?;
-configurable string db_host = ?;
-configurable string db_username = ?;
-configurable string db_password = ?;
-configurable string db_name = ?;
+string db_host = os:getEnv("DATABASE_HOST");
+string db_username = os:getEnv("DATABASE_USERNAME");
+string db_password = os:getEnv("DATABASE_PASSWORD");
+string db_name = os:getEnv("DATABASE_NAME");
+string auth_url = os:getEnv("AUTH_URL");
 
 type User record {
     readonly string id;
@@ -71,7 +73,7 @@ table<User> key(id) users = table [];
 
 postgresql:Client userClientDb = check new (db_host, db_username, db_password, db_name, 5432);
 
-http:Client authClient = check new ("http://localhost:8090");
+http:Client authClient = check new (auth_url);
 
 service class RequestInterceptor {
     *http:RequestInterceptor;
@@ -89,27 +91,35 @@ service class RequestInterceptor {
 
         string authorizationData = check req.getHeader("authorization");
 
-        http:Response|http:ClientError test = authClient->/api/collections/users/auth\-refresh.post({}, {Authorization: authorizationData});
-
+        http:Response|http:ClientError test = authClient->/auth/valid.post({}, {Authorization: authorizationData});
         if test is http:ClientError {
+            io:println(test);
             return http:UNAUTHORIZED;
         }
 
         if test.statusCode != 200 {
+            io:println(test);
             return http:UNAUTHORIZED;
         }
 
         json|http:ClientError data = test.getJsonPayload();
         if data is http:ClientError {
+            io:println(data);
+
             return http:UNAUTHORIZED;
         }
-        json|error userData = jsondata:read(data, `$.record`);
+        io:print(data);
+        json|error userData = jsondata:read(data, `$`);
         if userData is error {
+            io:println(userData);
+
             return http:UNAUTHORIZED;
         }
 
-        string|error userId = value:ensureType(userData.id, string);
+        string|error userId = value:ensureType(userData.sub, string);
         if userId is error {
+            io:println(userId);
+
             return http:UNAUTHORIZED;
         }
         req.setHeader("x_user_id", userId);
@@ -124,7 +134,7 @@ service http:InterceptableService /users on new http:Listener(port) {
         return [new RequestInterceptor()];
     }
 
-    resource function put .(UpdateUser data) returns UserOK|UserNotFound|BadRequestError|error {
+    resource function put .(@http:Header string x_user_id, UpdateUser data) returns UserOK|UserNotFound|BadRequestError|error {
 
         if data.name.length() < 1 || data.oldPassword.length() < 1 || data.newPassword.length() < 1 {
             BadRequestError badRequest = {
@@ -133,11 +143,9 @@ service http:InterceptableService /users on new http:Listener(port) {
             return badRequest;
         }
 
-        int user_id = 1;
-
         byte[] oldPasswordEncode = check crypto:hmacSha256(data.oldPassword.toBytes(), publicKey.toBytes());
 
-        stream<User, sql:Error?> userOldPasssowrdresult = userClientDb->query(`SELECT * FROM USERS WHERE id = ${user_id}`);
+        stream<User, sql:Error?> userOldPasssowrdresult = userClientDb->query(`SELECT * FROM USERS WHERE id = ${x_user_id}`);
 
         var user = check userOldPasssowrdresult.next();
 
@@ -147,9 +155,7 @@ service http:InterceptableService /users on new http:Listener(port) {
             };
             return userNotFound;
         }
-        io:println(user.value.password);
-        io:println(oldPasswordEncode.toBase16());
-        io:println(user.value.password == oldPasswordEncode.toBase16());
+
         if user.value.password != oldPasswordEncode.toBase16() {
             BadRequestError badRequest = {
                 body: {message: "Validation Error", details: "Username/password invalid", timeStamp: time:utcToString(time:utcNow())}
@@ -159,7 +165,7 @@ service http:InterceptableService /users on new http:Listener(port) {
 
         byte[] newPasswordEncoded = check crypto:hmacSha256(data.newPassword.toBytes(), publicKey.toBytes());
 
-        sql:ParameterizedQuery query = `UPDATE USERS SET NAME = ${data.name}, PASSWORD = ${newPasswordEncoded.toBase16()} WHERE ID = ${user_id}`;
+        sql:ParameterizedQuery query = `UPDATE USERS SET NAME = ${data.name}, PASSWORD = ${newPasswordEncoded.toBase16()} WHERE ID = ${x_user_id}`;
         sql:ExecutionResult|error result = userClientDb->execute(query);
 
         if result is sql:ExecutionResult {

@@ -2,18 +2,22 @@ import ballerina/crypto;
 import ballerina/http;
 import ballerina/io;
 import ballerina/jwt;
+import ballerina/os;
 import ballerina/sql;
 import ballerina/time;
 import ballerinax/postgresql;
 import ballerinax/postgresql.driver as _;
 
 configurable int port = ?;
-configurable string db_host = ?;
-configurable string db_username = ?;
-configurable string db_password = ?;
-configurable string db_name = ?;
+
 configurable string token_issuer = ?;
 configurable string token_audience = ?;
+
+string db_host = os:getEnv("DATABASE_HOST");
+string db_username = os:getEnv("DATABASE_USERNAME");
+string db_password = os:getEnv("DATABASE_PASSWORD");
+string db_name = os:getEnv("DATABASE_NAME");
+string cert_path = os:getEnv("CERT_PATH");
 
 type InputUser record {
     string name;
@@ -199,7 +203,7 @@ function createToken(string userId) returns string {
         signatureConfig: {
             algorithm: "RS256",
             config: {
-                keyFile: "./test.key"
+                keyFile: cert_path
             }
         }
     };

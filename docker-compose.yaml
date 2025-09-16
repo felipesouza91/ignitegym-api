@@ -1,4 +1,64 @@
 services:
+
+  auth:
+    image: felipedb91/ignitegym-api-auth:latest
+    environment:
+      - DATABASE_HOST=database
+      - DATABASE_USERNAME=user_service
+      - DATABASE_PASSWORD=user_service_password
+      - DATABASE_NAME=ignitegym
+      - CERT_PATH=./certs
+    depends_on:
+      - database
+  
+  exercises:
+    image: felipedb91/ignitegym-api-exercises:latest
+    environment:
+      - DATABASE_HOST=database
+      - DATABASE_USERNAME=user_service
+      - DATABASE_PASSWORD=user_service_password
+      - DATABASE_NAME=ignitegym
+      - AUTH_URL=http://auth:9090
+    depends_on:
+      - database
+      - auth
+
+  groups:
+    image: felipedb91/ignitegym-api-groups:latest
+    environment:
+      - DATABASE_HOST=database
+      - DATABASE_USERNAME=user_service
+      - DATABASE_PASSWORD=user_service_password
+      - DATABASE_NAME=ignitegym
+      - AUTH_URL=http://auth:9090
+    depends_on:
+      - database
+      - auth
+
+  histories:
+    image: felipedb91/ignitegym-api-histories:latest
+    environment:
+      - DATABASE_HOST=database
+      - DATABASE_USERNAME=user_service
+      - DATABASE_PASSWORD=user_service_password
+      - DATABASE_NAME=ignitegym
+      - AUTH_URL=http://auth:9090
+    depends_on:
+      - database
+      - auth
+
+  users:
+    image: felipedb91/ignitegym-api-user:latest
+    environment:
+      - DATABASE_HOST=database
+      - DATABASE_USERNAME=user_service
+      - DATABASE_PASSWORD=user_service_password
+      - DATABASE_NAME=ignitegym
+      - AUTH_URL=http://auth:9090
+    depends_on:
+      - database
+      - auth
+
   database:
     image: postgres:17-alpine
     ports:

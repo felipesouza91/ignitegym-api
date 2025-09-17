@@ -15,9 +15,9 @@ type InputHistoryDTO record {
 type HistoryDTO record {
     int id;
     @sql:Column {name: "user_id"}
-    int userId;
+    string userId;
     @sql:Column {name: "exercise_id"}
-    int exerciseId;
+    string exerciseId;
     string name;
     @sql:Column {name: "group_name"}
     string group;
@@ -125,9 +125,9 @@ service http:InterceptableService /histories on new http:Listener(port) {
         return [new RequestInterceptor()];
     }
 
-    resource function get .(@http:Header int x_user_id) returns HisotryByDateDTO[]|error? {
+    resource function get .(@http:Header string x_user_id) returns HisotryByDateDTO[]|error? {
 
-        sql:ParameterizedQuery exercisesHistory = `SELECT EH.id, EH.user_id, EH.exercise_id , E.name , E.group_name, EH.created_at FROM exercises_histories EH JOIN exercises E ON EH.exercise_id = E.id  WHERE EH.user_id = ${x_user_id}`;
+        sql:ParameterizedQuery exercisesHistory = `SELECT EH.id, EH.user_id, EH.exercise_id , E.name , E.group_name, EH.created_at FROM exercises_histories EH JOIN exercises E ON EH.exercise_id = E.id WHERE EH.user_id = ${x_user_id}::uuid`;
 
         stream<HistoryDTO, sql:Error?> result = exercicesClientDb->query(exercisesHistory);
 
@@ -164,7 +164,7 @@ service http:InterceptableService /histories on new http:Listener(port) {
         return resultFormated;
     }
 
-    resource function post .(@http:Header int x_user_id, InputHistoryDTO input) returns http:Created|AppBadRequest|ServerError? {
+    resource function post .(@http:Header string x_user_id, InputHistoryDTO input) returns http:Created|AppBadRequest|ServerError? {
 
         stream<Exercise, sql:Error?> exercisesQueryResult = exercicesClientDb->query(`SELECT id FROM exercises WHERE id = ${input.exerciseId}`);
 

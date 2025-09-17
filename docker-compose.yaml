@@ -1,63 +1,92 @@
 services:
 
-  auth:
-    image: felipedb91/ignitegym-api-auth:latest
-    environment:
-      - DATABASE_HOST=database
-      - DATABASE_USERNAME=user_service
-      - DATABASE_PASSWORD=user_service_password
-      - DATABASE_NAME=ignitegym
-      - CERT_PATH=./certs
-    depends_on:
-      - database
-  
-  exercises:
-    image: felipedb91/ignitegym-api-exercises:latest
-    environment:
-      - DATABASE_HOST=database
-      - DATABASE_USERNAME=user_service
-      - DATABASE_PASSWORD=user_service_password
-      - DATABASE_NAME=ignitegym
-      - AUTH_URL=http://auth:9090
-    depends_on:
-      - database
-      - auth
+  api-gateway:
+    image: nginx:1.29.1
+    ports:
+      - "80:80"
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/nginx.conf
+    networks:
+      - api_gateway_network
 
-  groups:
-    image: felipedb91/ignitegym-api-groups:latest
+  auth:
+    image: felipedb91/ignitegym-api-auth:v0.0.1
+    environment:
+      - DATABASE_HOST=database
+      - DATABASE_USERNAME=user_service
+      - DATABASE_PASSWORD=user_service_password
+      - DATABASE_NAME=ignitegym
+      - BAL_CONFIG_DATA=port=9090\ntoken_issuer="ignite-auth-api"\ntoken_audience = "vEwzbcasJVQm1jVYHUHCjhxZ4tYa"
+      - CERT_PATH=/test.key
+    depends_on:
+      - database
+    networks:
+      - api_gateway_network
+      - database_network
+    volumes:
+      - ./auth/test.key:/test.key
+  exercises:
+    image: felipedb91/ignitegym-api-exercises:v0.0.1
     environment:
       - DATABASE_HOST=database
       - DATABASE_USERNAME=user_service
       - DATABASE_PASSWORD=user_service_password
       - DATABASE_NAME=ignitegym
       - AUTH_URL=http://auth:9090
+      - BAL_CONFIG_DATA=port=9090
     depends_on:
       - database
       - auth
+    networks:
+      - api_gateway_network
+      - database_network
+  groups:
+    image: felipedb91/ignitegym-api-groups:v0.0.1
+    environment:
+      - DATABASE_HOST=database
+      - DATABASE_USERNAME=user_service
+      - DATABASE_PASSWORD=user_service_password
+      - DATABASE_NAME=ignitegym
+      - AUTH_URL=http://auth:9090
+      - BAL_CONFIG_DATA=port=9090
+    depends_on:
+      - database
+      - auth
+    networks:
+      - api_gateway_network
+      - database_network
 
   histories:
-    image: felipedb91/ignitegym-api-histories:latest
+    image: felipedb91/ignitegym-api-histories:v0.0.1
     environment:
       - DATABASE_HOST=database
       - DATABASE_USERNAME=user_service
       - DATABASE_PASSWORD=user_service_password
       - DATABASE_NAME=ignitegym
       - AUTH_URL=http://auth:9090
+      - BAL_CONFIG_DATA=port=9090
     depends_on:
       - database
       - auth
+    networks:
+      - api_gateway_network
+      - database_network
 
   users:
-    image: felipedb91/ignitegym-api-user:latest
+    image: felipedb91/ignitegym-api-user:v0.0.1
     environment:
       - DATABASE_HOST=database
       - DATABASE_USERNAME=user_service
       - DATABASE_PASSWORD=user_service_password
       - DATABASE_NAME=ignitegym
       - AUTH_URL=http://auth:9090
+      - BAL_CONFIG_DATA=port=9090
     depends_on:
       - database
       - auth
+    networks:
+      - api_gateway_network
+      - database_network
 
   database:
     image: postgres:17-alpine
@@ -65,3 +94,13 @@ services:
       POSTGRES_PASSWORD: user_service_password
       POSTGRES_USER: user_service
       POSTGRES_DB: ignitegym
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - database_network
+
+networks:
+  api_gateway_network:
+  database_network:

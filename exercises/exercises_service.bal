@@ -110,7 +110,7 @@ service class RequestInterceptor {
     }
 }
 
-postgresql:Client exercicesClientDb = check new (db_host, db_username, db_password, db_name, 5432);
+postgresql:Client exercicesClientDb = check new (db_host, db_username, db_password, db_name, 5432, connectionPool = ({maxConnectionLifeTime: 0, maxOpenConnections: 5, minIdleConnections: 1}));
 
 service http:InterceptableService /exercises on new http:Listener(port) {
 

@@ -62,7 +62,10 @@ type UserNotFound record {|
 |};
 
 type TokenData record {|
-    string jwt;
+    string id?;
+    string name?;
+    string email?;
+    string token;
     string refresh_token;
 |};
 
@@ -104,7 +107,7 @@ type RefreshToken record {
 
 string publicKey = "2823869431363516509006392718966225393686686492746057458250676423225088364271327327657813178602773210";
 
-postgresql:Client userClientDb = check new (db_host, db_username, db_password, db_name, 5432);
+postgresql:Client userClientDb = check new (db_host, db_username, db_password, db_name, 5432, connectionPool = ({maxConnectionLifeTime: 0, maxOpenConnections: 5, minIdleConnections: 1}));
 
 service /auth on new http:Listener(port) {
 
@@ -162,7 +165,7 @@ service /auth on new http:Listener(port) {
         refresh_token = new_refresh_token.refresh_token;
 
         AppTokenReponse response = {
-            body: {jwt: jwt, refresh_token: refresh_token}
+            body: {id: user.value.id, name: user.value.name, email: user.value.email, token: jwt, refresh_token: refresh_token}
         };
 
         return response;
@@ -176,7 +179,7 @@ service /auth on new http:Listener(port) {
 
         if userExists != () {
             AppBadRequestError badRequest = {
-                body: {message: "User validation", details: "Email already exits.", timeStamp: time:utcToString(time:utcNow())}
+                body: {message: "User validation", details: "Email/password invalid", timeStamp: time:utcToString(time:utcNow())}
             };
             return badRequest;
         }
@@ -217,7 +220,7 @@ service /auth on new http:Listener(port) {
         if result is sql:ExecutionResult {
             string jwt = createToken(id);
             AppUserCreated userCreated = {
-                body: {jwt: jwt, refresh_token: refresh_token}
+                body: {token: jwt, refresh_token: refresh_token}
             };
             return userCreated;
         }
@@ -270,7 +273,7 @@ service /auth on new http:Listener(port) {
         }
 
         AppTokenReponse response = {
-            body: {jwt: jwt, refresh_token: new_refresh_token.refresh_token}
+            body: {token: jwt, refresh_token: new_refresh_token.refresh_token}
         };
 
         return response;

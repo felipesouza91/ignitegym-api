@@ -9,7 +9,7 @@ import ballerinax/postgresql;
 import ballerinax/postgresql.driver as _;
 
 type Exercise record {
-    int id;
+    string id;
     string name;
     string series;
     int repetitions;
@@ -25,7 +25,7 @@ type Exercise record {
 };
 
 type ExerciseDTO record {
-    int id;
+    string id;
     string name;
     string series;
     int repetitions;
@@ -55,12 +55,12 @@ string db_password = os:getEnv("DATABASE_PASSWORD");
 string db_name = os:getEnv("DATABASE_NAME");
 string auth_url = os:getEnv("AUTH_URL");
 
-http:Client authClient = check new (auth_url);
+final http:Client authClient = check new (auth_url);
 
 service class RequestInterceptor {
     *http:RequestInterceptor;
 
-    resource function 'default [string... path](
+    isolated resource function 'default [string... path](
             http:RequestContext ctx, http:Request req)
         returns http:NotImplemented|http:Unauthorized|http:NextService|error? {
         string[] headers = req.getHeaderNames();
@@ -110,7 +110,17 @@ service class RequestInterceptor {
     }
 }
 
-postgresql:Client exercicesClientDb = check new (db_host, db_username, db_password, db_name, 5432, connectionPool = ({maxConnectionLifeTime: 0, maxOpenConnections: 5, minIdleConnections: 1}));
+final postgresql:Client exercicesClientDb = check new (
+    db_host, db_username,
+    db_password,
+    db_name,
+    5432,
+    connectionPool = ({
+        maxConnectionLifeTime: 18000 * 3,
+        maxOpenConnections: 5,
+        minIdleConnections: 2
+        })
+);
 
 service http:InterceptableService /exercises on new http:Listener(port) {
 
@@ -118,7 +128,7 @@ service http:InterceptableService /exercises on new http:Listener(port) {
         return [new RequestInterceptor()];
     }
 
-    resource function get bygroups/[string group_name]() returns ExerciseDTO[]|error? {
+    isolated resource function get bygroups/[string group_name]() returns ExerciseDTO[]|error? {
         io:println(group_name);
         stream<Exercise, sql:Error?> result = exercicesClientDb->query(`SELECT * FROM exercises WHERE group_name = ${group_name} ORDER BY NAME`);
 
@@ -151,11 +161,11 @@ service http:InterceptableService /exercises on new http:Listener(port) {
                     updatedAt: updateFormated
                 });
             };
-
+        check result.close();
         return exercises;
     }
 
-    resource function get [int id]() returns Exercise|ExerciseNotFound|error? {
+    isolated resource function get [int id]() returns Exercise|ExerciseNotFound|error? {
         stream<Exercise, sql:Error?> result = exercicesClientDb->query(`SELECT * FROM exercises WHERE id = ${id}`);
 
         var exercise = check result.next();
@@ -166,7 +176,7 @@ service http:InterceptableService /exercises on new http:Listener(port) {
             };
             return exerciseNotFound;
         }
-
+        check result.close();
         return exercise.value;
     }
 

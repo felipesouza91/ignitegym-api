@@ -33,7 +33,7 @@ CREATE TABLE refresh_tokens (
   refresh_token VARCHAR(255) NOT NULL UNIQUE,
   user_id UUID NOT NULL,
   expires_in TIMESTAMP NOT NULL,
-  created_at TIMESTAMP  DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 	CONSTRAINT refresh_tokens_user_table_fk FOREIGN KEY(user_id) REFERENCES users(id)
 );
 

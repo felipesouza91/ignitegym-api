@@ -30,12 +30,12 @@ configurable string db_password = os:getEnv("DATABASE_PASSWORD");
 configurable string db_name = os:getEnv("DATABASE_NAME");
 configurable string auth_url = os:getEnv("AUTH_URL");
 
-http:Client authClient = check new (auth_url);
+final http:Client authClient = check new (auth_url);
 
 service class RequestInterceptor {
     *http:RequestInterceptor;
 
-    resource function 'default [string... path](
+    isolated resource function 'default [string... path](
             http:RequestContext ctx, http:Request req)
         returns http:NotImplemented|http:Unauthorized|http:NextService|error? {
         string[] headers = req.getHeaderNames();
@@ -85,7 +85,13 @@ service class RequestInterceptor {
     }
 }
 
-postgresql:Client exercicesClientDb = check new (db_host, db_username, db_password, db_name, 5432, connectionPool = ({maxConnectionLifeTime: 0, maxOpenConnections: 5, minIdleConnections: 1}));
+final postgresql:Client exercicesClientDb = check new (db_host,
+    db_username,
+    db_password,
+    db_name,
+    5432,
+    connectionPool = ({maxConnectionLifeTime: 0, maxOpenConnections: 5, minIdleConnections: 1})
+);
 
 service http:InterceptableService /groups on new http:Listener(port) {
 
@@ -93,7 +99,7 @@ service http:InterceptableService /groups on new http:Listener(port) {
         return [new RequestInterceptor()];
     }
 
-    resource function get .() returns Group[]|error? {
+    isolated resource function get .() returns Group[]|error? {
         stream<Group, sql:Error?> result = exercicesClientDb->query(`SELECT group_name FROM exercises GROUP BY group_name order by group_name`);
 
         Group[] groups = [];
@@ -102,7 +108,7 @@ service http:InterceptableService /groups on new http:Listener(port) {
             do {
                 groups.push(group);
             };
-
+        check result.close();
         return groups;
     }
 

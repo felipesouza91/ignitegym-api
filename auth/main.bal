@@ -3,6 +3,7 @@ import ballerina/http;
 import ballerina/io;
 import ballerina/jwt;
 import ballerina/os;
+//import ballerina/os;
 import ballerina/sql;
 import ballerina/time;
 import ballerina/uuid;
@@ -18,7 +19,7 @@ string db_host = os:getEnv("DATABASE_HOST");
 string db_username = os:getEnv("DATABASE_USERNAME");
 string db_password = os:getEnv("DATABASE_PASSWORD");
 string db_name = os:getEnv("DATABASE_NAME");
-string cert_path = os:getEnv("CERT_PATH");
+final string cert_path = os:getEnv("CERT_PATH");
 
 type InputUser record {
     string name;
@@ -105,13 +106,13 @@ type RefreshToken record {
     time:Utc created_at;
 };
 
-string publicKey = "2823869431363516509006392718966225393686686492746057458250676423225088364271327327657813178602773210";
+final string publicKey = "2823869431363516509006392718966225393686686492746057458250676423225088364271327327657813178602773210";
 
-postgresql:Client userClientDb = check new (db_host, db_username, db_password, db_name, 5432, connectionPool = ({maxConnectionLifeTime: 0, maxOpenConnections: 5, minIdleConnections: 1}));
+final postgresql:Client userClientDb = check new (db_host, db_username, db_password, db_name, 5432);
 
 service /auth on new http:Listener(port) {
 
-    resource function post valid(@http:Header string authorization) returns ValidRequest|error? {
+    isolated resource function post valid(@http:Header string authorization) returns ValidRequest|error? {
 
         string jwt = authorization.substring(7);
 
@@ -128,7 +129,7 @@ service /auth on new http:Listener(port) {
         return resultResponse;
     }
 
-    resource function post token(UserValid data) returns AppTokenReponse|UserNotFound|AppBadRequestError|error {
+    isolated resource function post token(UserValid data) returns AppTokenReponse|UserNotFound|AppBadRequestError|error {
 
         byte[]|error output = crypto:hmacSha256(data.password.toBytes(), publicKey.toBytes());
 
@@ -151,16 +152,23 @@ service /auth on new http:Listener(port) {
             return userNotFound;
         }
 
-        string jwt = createToken(user.value.id);
+        check result.close();
+
+        string jwt = createToken(user.value.id.toString());
 
         RefreshToken new_refresh_token = generateRefreshToken(user.value.id);
 
-        sql:ParameterizedQuery inserQuery = `INSERT INTO refresh_tokens(expires_in, refresh_token, user_id) VALUES(${new_refresh_token.expires_in}, ${new_refresh_token.refresh_token}, ${new_refresh_token.user_id})`;
+        sql:ParameterizedQuery inserQuery = `INSERT INTO refresh_tokens(expires_in, refresh_token, user_id) VALUES(${time:utcToCivil(new_refresh_token.expires_in)} , ${new_refresh_token.refresh_token} , ${new_refresh_token.user_id}::uuid)`;
 
         var insertResult = userClientDb->execute(inserQuery);
         string refresh_token = "";
         if insertResult is sql:Error {
+            io:println(insertResult);
             io:println("Erro ao inserir token");
+            AppBadRequestError badRequest = {
+                body: {message: "User Error", details: "Erro try late", timeStamp: time:utcToString(time:utcNow())}
+            };
+            return badRequest;
         }
         refresh_token = new_refresh_token.refresh_token;
 
@@ -171,7 +179,7 @@ service /auth on new http:Listener(port) {
         return response;
     };
 
-    resource function post create(InputUser input) returns AppUserCreated|AppBadRequestError|error? {
+    isolated resource function post create(InputUser input) returns AppUserCreated|AppBadRequestError|error? {
 
         stream<User, sql:Error?> userExitsResult = userClientDb->query(` SELECT * FROM USERS WHERE EMAIL = ${input.email} `);
 
@@ -184,9 +192,12 @@ service /auth on new http:Listener(port) {
             return badRequest;
         }
 
+        check userExitsResult.close();
+
         byte[]|error output = crypto:hmacSha256(input.password.toBytes(), publicKey.toBytes());
 
         if output is error {
+            io:print(output);
             io:println(output.message());
             AppBadRequestError badRequest = {
                 body: {message: "Create User Error", details: "Error during create user", timeStamp: time:utcToString(time:utcNow())}
@@ -194,7 +205,7 @@ service /auth on new http:Listener(port) {
             return badRequest;
         }
 
-        sql:ParameterizedQuery query = ` INSERT INTO USERS(NAME, EMAIL, PASSWORD) VALUES(${input.name}, ${input.email}, ${output.toBase16()})`;
+        sql:ParameterizedQuery query = `INSERT INTO USERS(NAME, EMAIL, PASSWORD) VALUES(${input.name}, ${input.email}, ${output.toBase16()})`;
         sql:ExecutionResult|error result = userClientDb->execute(query);
 
         stream<User, sql:Error?> resultUser = userClientDb->query(`SELECT * FROM USERS WHERE EMAIL = ${input.email} `);
@@ -203,34 +214,55 @@ service /auth on new http:Listener(port) {
 
         if user is () {
             io:println("User not found after create");
+            AppBadRequestError badRequest = {
+                body: {message: "Create User Error", details: "Error during create user", timeStamp: time:utcToString(time:utcNow())}
+            };
+            return badRequest;
         }
-        string id = user is record {|User value;|} ? user.value.id : "";
+        string id = user.value.id;
+
+        check resultUser.close();
 
         RefreshToken new_refresh_token = generateRefreshToken(id);
 
-        sql:ParameterizedQuery inserQuery = `INSERT INTO refresh_tokens(expires_in, refresh_token, user_id) VALUES(${new_refresh_token.expires_in}, ${new_refresh_token.refresh_token}, ${new_refresh_token.user_id})`;
+        sql:ParameterizedQuery inserQuery = `INSERT INTO refresh_tokens(expires_in, refresh_token, user_id) VALUES(${time:utcToCivil(new_refresh_token.expires_in)} , ${new_refresh_token.refresh_token} , ${new_refresh_token.user_id}::uuid)`;
 
         var insertResult = userClientDb->execute(inserQuery);
+
         string refresh_token = "";
+
         if insertResult is sql:Error {
+            io:print(insertResult.message());
             io:println("Erro ao inserir token");
+            AppBadRequestError badRequest = {
+                body: {message: "Create User Error", details: "Error during create user", timeStamp: time:utcToString(time:utcNow())}
+            };
+            return badRequest;
         }
         refresh_token = new_refresh_token.refresh_token;
 
         if result is sql:ExecutionResult {
-            string jwt = createToken(id);
+            string jwt = createToken(id.toString());
             AppUserCreated userCreated = {
-                body: {token: jwt, refresh_token: refresh_token}
+                body: {
+                    id: user.value.id,
+                    email: user.value.email,
+                    name: user.value.name,
+                    token: jwt,
+                    refresh_token: refresh_token}
             };
             return userCreated;
         }
         AppBadRequestError badRequest = {
                 body: {message: "Create User Error", details: "Error during create user", timeStamp: time:utcToString(time:utcNow())}
             };
+
+        check userClientDb.close();
+
         return badRequest;
     };
 
-    resource function post refresh\-token(RefreshTokenRequest data) returns AppTokenReponse|AppBadRequestError|error? {
+    isolated resource function post refresh\-token(RefreshTokenRequest data) returns AppTokenReponse|AppBadRequestError|error? {
         if data.refresh_token == "" {
             AppBadRequestError badRequest = {
                 body: {message: "Refresh Token Error", details: "Refresh token is required", timeStamp: time:utcToString(time:utcNow())}
@@ -247,7 +279,7 @@ service /auth on new http:Listener(port) {
             };
             return badRequest;
         }
-
+        check refreshTokenResult.close();
         if time:utcDiffSeconds(refreshToken.value.expires_in, time:utcNow()) <= <decimal>0 {
             AppBadRequestError badRequest = {
                 body: {message: "Refresh Token Error", details: "Refresh token expired", timeStamp: time:utcToString(time:utcNow())}
@@ -255,33 +287,45 @@ service /auth on new http:Listener(port) {
             return badRequest;
         }
 
-        string jwt = createToken(refreshToken.value.user_id);
+        string jwt = createToken(refreshToken.value.user_id.toString());
         RefreshToken new_refresh_token = generateRefreshToken(refreshToken.value.user_id);
 
-        sql:ParameterizedQuery inserQuery = `INSERT INTO refresh_tokens(expires_in, refresh_token, user_id) VALUES(${new_refresh_token.expires_in}, ${new_refresh_token.refresh_token}, ${new_refresh_token.user_id})`;
+        sql:ParameterizedQuery inserQuery = `INSERT INTO refresh_tokens(expires_in, refresh_token, user_id) VALUES(${time:utcToCivil(new_refresh_token.expires_in)} , ${new_refresh_token.refresh_token} , ${new_refresh_token.user_id}::uuid)`;
 
         var insertResult = userClientDb->execute(inserQuery);
 
         if insertResult is sql:Error {
+            io:println(insertResult.message());
             io:println("Erro ao inserir refresh token");
+            AppBadRequestError badRequest = {
+                body: {message: "Refresh Token Error", details: "Error during create user", timeStamp: time:utcToString(time:utcNow())}
+            };
+            return badRequest;
         }
 
         var resultDelete = userClientDb->execute(`DELETE FROM refresh_tokens WHERE refresh_token = ${new_refresh_token.refresh_token}`);
 
         if resultDelete is sql:Error {
+            io:println(resultDelete.message());
+
             io:println("Erro ao remover token");
+            AppBadRequestError badRequest = {
+                body: {message: "Refresh Token Error", details: "Refresh token expired", timeStamp: time:utcToString(time:utcNow())}
+            };
+            return badRequest;
         }
 
         AppTokenReponse response = {
             body: {token: jwt, refresh_token: new_refresh_token.refresh_token}
         };
+        check userClientDb.close();
 
         return response;
 
     }
 }
 
-function createToken(string userId) returns string {
+isolated function createToken(string userId) returns string {
     jwt:IssuerConfig issuerConfig = {
             username: userId,
             issuer: token_issuer,
@@ -305,7 +349,7 @@ function createToken(string userId) returns string {
     return jwt;
 }
 
-function generateRefreshToken(string user_id) returns RefreshToken {
+isolated function generateRefreshToken(string user_id) returns RefreshToken {
     time:Utc expires_in = time:utcAddSeconds(time:utcNow(), 86400); // 7 days
     string refresh_token = uuid:createType4AsString();
 

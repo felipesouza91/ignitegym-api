@@ -13,7 +13,7 @@ type InputHistoryDTO record {
 };
 
 type HistoryDTO record {
-    int id;
+    string id;
     @sql:Column {name: "user_id"}
     string userId;
     @sql:Column {name: "exercise_id"}
@@ -62,12 +62,12 @@ string db_password = os:getEnv("DATABASE_PASSWORD");
 string db_name = os:getEnv("DATABASE_NAME");
 string auth_url = os:getEnv("AUTH_URL");
 
-http:Client authClient = check new (auth_url);
+final http:Client authClient = check new (auth_url);
 
 service class RequestInterceptor {
     *http:RequestInterceptor;
 
-    resource function 'default [string... path](
+    isolated resource function 'default [string... path](
             http:RequestContext ctx, http:Request req)
         returns http:NotImplemented|http:Unauthorized|http:NextService|error? {
         string[] headers = req.getHeaderNames();
@@ -117,7 +117,14 @@ service class RequestInterceptor {
     }
 }
 
-postgresql:Client exercicesClientDb = check new (db_host, db_username, db_password, db_name, 5432, connectionPool = ({maxConnectionLifeTime: 0, maxOpenConnections: 5, minIdleConnections: 1}));
+final postgresql:Client exercicesClientDb = check new (
+    db_host,
+    db_username,
+    db_password,
+    db_name,
+    5432,
+    connectionPool = ({maxConnectionLifeTime: 0, maxOpenConnections: 5, minIdleConnections: 1})
+);
 
 service http:InterceptableService /histories on new http:Listener(port) {
 
@@ -161,10 +168,11 @@ service http:InterceptableService /histories on new http:Listener(port) {
             }
 
         });
+        check result.close();
         return resultFormated;
     }
 
-    resource function post .(@http:Header string x_user_id, InputHistoryDTO input) returns http:Created|AppBadRequest|ServerError? {
+    isolated resource function post .(@http:Header string x_user_id, InputHistoryDTO input) returns http:Created|AppBadRequest|ServerError|error? {
 
         stream<Exercise, sql:Error?> exercisesQueryResult = exercicesClientDb->query(`SELECT id FROM exercises WHERE id = ${input.exerciseId}`);
 
@@ -196,11 +204,13 @@ service http:InterceptableService /histories on new http:Listener(port) {
             };
             return serverError;
         }
+        check exercisesQueryResult.close();
+
         return http:CREATED;
     }
 }
 
-function formatDate(time:Utc data) returns string {
+isolated function formatDate(time:Utc data) returns string {
     int day = time:utcToCivil(data).day;
     int month = time:utcToCivil(data).month;
     int year = time:utcToCivil(data).year;
@@ -208,7 +218,7 @@ function formatDate(time:Utc data) returns string {
     return string `${day}.${month}.${year}`;
 }
 
-function addDate(string date, string[] dates) {
+isolated function addDate(string date, string[] dates) {
     foreach var item in dates {
         if (item == date) {
             return;

@@ -3,7 +3,6 @@ import ballerina/http;
 import ballerina/io;
 import ballerina/jwt;
 import ballerina/os;
-//import ballerina/os;
 import ballerina/sql;
 import ballerina/time;
 import ballerina/uuid;
@@ -32,6 +31,7 @@ type User record {
     string name;
     string email;
     string password;
+    string avatar?;
 };
 
 type UserDTO record {
@@ -66,6 +66,7 @@ type TokenData record {|
     string id?;
     string name?;
     string email?;
+    string avatar?;
     string token;
     string refresh_token;
 |};
@@ -99,6 +100,11 @@ type ValidRequest record {|
     jwt:Payload body;
 |};
 
+type AuthInvalid record {|
+    *http:Unauthorized;
+    ErrorDetails body;
+|};
+
 type RefreshToken record {
     time:Utc expires_in;
     string refresh_token;
@@ -112,15 +118,34 @@ final postgresql:Client userClientDb = check new (db_host, db_username, db_passw
 
 service /auth on new http:Listener(port) {
 
-    isolated resource function post valid(@http:Header string authorization) returns ValidRequest|error? {
+    isolated resource function post valid(@http:Header string authorization) returns ValidRequest|AuthInvalid|error? {
 
         string jwt = authorization.substring(7);
 
         [jwt:Header, jwt:Payload]|jwt:Error result = jwt:decode(jwt);
 
         if result is jwt:Error {
-            io:println(result.message());
-            return result;
+            AuthInvalid authRequestError = {
+                body: {message: "Invalid Token", details: "Token is invalid", timeStamp: time:utcToString(time:utcNow())}
+            };
+            return authRequestError;
+        }
+
+        if result[1].exp is () {
+            AuthInvalid authInvalidResponse = {
+                body: {message: "Invalid Token", details: "Invalid token", timeStamp: time:utcToString(time:utcNow())}
+            };
+            return authInvalidResponse;
+        } else {
+            var opoch = result[1].exp ?: 0;
+            time:Utc endDate = [opoch, 0.0];
+
+            if time:utcDiffSeconds(endDate, time:utcNow()) <= <decimal>0 {
+                AuthInvalid authInvalidResponse = {
+                    body: {message: "Invalid Token", details: "Token expired", timeStamp: time:utcToString(time:utcNow())}
+                };
+                return authInvalidResponse;
+            }
         }
 
         ValidRequest resultResponse = {
@@ -173,7 +198,7 @@ service /auth on new http:Listener(port) {
         refresh_token = new_refresh_token.refresh_token;
 
         AppTokenReponse response = {
-            body: {id: user.value.id, name: user.value.name, email: user.value.email, token: jwt, refresh_token: refresh_token}
+            body: {id: user.value.id, name: user.value.name, email: user.value.email, token: jwt, refresh_token: refresh_token, avatar: user.value.avatar}
         };
 
         return response;
@@ -248,6 +273,7 @@ service /auth on new http:Listener(port) {
                     id: user.value.id,
                     email: user.value.email,
                     name: user.value.name,
+                    avatar: user.value.avatar,
                     token: jwt,
                     refresh_token: refresh_token}
             };
@@ -330,7 +356,7 @@ isolated function createToken(string userId) returns string {
             username: userId,
             issuer: token_issuer,
             audience: token_audience,
-            expTime: 3600,
+            expTime: 50,
 
             signatureConfig: {
                 algorithm: "RS256",

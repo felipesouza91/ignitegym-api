@@ -38,5 +38,6 @@ target/
 # Ballerina related ignores
 Ballerina.lock
 
+/users/files
 *.pub
 *.key

@@ -19,7 +19,6 @@ type Exercise record {
     string thumb?;
     @sql:Column {name: "created_at"}
     time:Utc createdAt;
-
     @sql:Column {name: "updated_at"}
     time:Utc? updatedAt;
 };
@@ -33,7 +32,6 @@ type ExerciseDTO record {
     string demo;
     string thumb?;
     string createdAt;
-
     string? updatedAt;
 };
 
@@ -165,8 +163,8 @@ service http:InterceptableService /exercises on new http:Listener(port) {
         return exercises;
     }
 
-    isolated resource function get [int id]() returns Exercise|ExerciseNotFound|error? {
-        stream<Exercise, sql:Error?> result = exercicesClientDb->query(`SELECT * FROM exercises WHERE id = ${id}`);
+    isolated resource function get [string id]() returns Exercise|ExerciseNotFound|error? {
+        stream<Exercise, sql:Error?> result = exercicesClientDb->query(`SELECT * FROM exercises WHERE id = ${id}::uuid`);
 
         var exercise = check result.next();
 

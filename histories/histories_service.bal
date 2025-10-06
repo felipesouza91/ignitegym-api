@@ -9,7 +9,7 @@ import ballerinax/postgresql;
 import ballerinax/postgresql.driver as _;
 
 type InputHistoryDTO record {
-    int exerciseId;
+    string exerciseId;
 };
 
 type HistoryDTO record {
@@ -25,9 +25,18 @@ type HistoryDTO record {
     time:Utc createdAt;
 };
 
+type HistoryResquestDTO record {
+    string id;
+    string userId;
+    string exerciseId;
+    string name;
+    string group;
+    string createdAt;
+};
+
 type HisotryByDateDTO record {
     string title;
-    HistoryDTO[] exercises;
+    HistoryResquestDTO[] exercises;
 };
 
 type GroupNotFound record {|
@@ -52,7 +61,7 @@ type AppBadRequest record {|
 |};
 
 type Exercise record {
-    int id;
+    string id;
 };
 
 configurable int port = ?;
@@ -153,15 +162,23 @@ service http:InterceptableService /histories on new http:Listener(port) {
         HisotryByDateDTO[] resultFormated = [];
         histories.forEach(function(HistoryDTO data) {
             string formatedDate = formatDate(data.createdAt);
+            HistoryResquestDTO historyData = {
+                id: data.id,
+                userId: data.userId,
+                exerciseId: data.exerciseId,
+                name: data.name,
+                group: data.group,
+                createdAt: time:utcToString(data.createdAt)
+            };
             if resultFormated.length() < 1 {
-                HisotryByDateDTO historie = {title: formatedDate, exercises: [data]};
+                HisotryByDateDTO historie = {title: formatedDate, exercises: [historyData]};
                 resultFormated.push(historie);
             } else {
                 resultFormated.forEach(function(HisotryByDateDTO value) {
                     if (value.title == formatedDate) {
-                        value.exercises.push(data);
+                        value.exercises.push(historyData);
                     } else {
-                        HisotryByDateDTO historie = {title: formatedDate, exercises: [data]};
+                        HisotryByDateDTO historie = {title: formatedDate, exercises: [historyData]};
                         resultFormated.push(historie);
                     }
                 });
@@ -174,16 +191,17 @@ service http:InterceptableService /histories on new http:Listener(port) {
 
     isolated resource function post .(@http:Header string x_user_id, InputHistoryDTO input) returns http:Created|AppBadRequest|ServerError|error? {
 
-        stream<Exercise, sql:Error?> exercisesQueryResult = exercicesClientDb->query(`SELECT id FROM exercises WHERE id = ${input.exerciseId}`);
+        stream<Exercise, sql:Error?> exercisesQueryResult = exercicesClientDb->query(`SELECT id FROM exercises WHERE id = ${input.exerciseId}::uuid`);
 
         var exerciseResultData = exercisesQueryResult.next();
+
         if exerciseResultData is sql:Error {
             io:println("Exercice error");
             io:println(exerciseResultData);
-            ServerError serverError = {
-                body: {message: "Internal server error", details: "Error during process, try again later", timeStamp: time:utcToString(time:utcNow())}
+            AppBadRequest appBadRequest = {
+                body: {message: "Bad request", details: "Error during process, try again later", timeStamp: time:utcToString(time:utcNow())}
             };
-            return serverError;
+            return appBadRequest;
         }
 
         if exerciseResultData is () {
@@ -193,7 +211,9 @@ service http:InterceptableService /histories on new http:Listener(port) {
             return appBadRequest;
         }
 
-        sql:ParameterizedQuery createHistory = `INSERT INTO exercises_histories(user_id, exercise_id) VALUES (${x_user_id}, ${input.exerciseId})`;
+        check exercisesQueryResult.close();
+
+        sql:ParameterizedQuery createHistory = `INSERT INTO exercises_histories(user_id, exercise_id) VALUES (${x_user_id}::uuid, ${input.exerciseId}::uuid)`;
         var result = exercicesClientDb->execute(createHistory);
 
         if result is error {
@@ -204,7 +224,6 @@ service http:InterceptableService /histories on new http:Listener(port) {
             };
             return serverError;
         }
-        check exercisesQueryResult.close();
 
         return http:CREATED;
     }

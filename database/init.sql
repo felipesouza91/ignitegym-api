@@ -4,7 +4,8 @@ CREATE TABLE users(
 	id UUID PRIMARY KEY default gen_random_uuid() ,
 	name varchar(255) not null,
 	email varchar(255) not null unique,
-	password varchar(255) not null
+	password varchar(255) not null,
+  avatar varchar(255)
 ); 
 
 CREATE TABLE exercises (

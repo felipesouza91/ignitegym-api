@@ -1,8 +1,10 @@
 import ballerina/crypto;
 import ballerina/data.jsondata;
+import ballerina/file;
 import ballerina/http;
 import ballerina/io;
 import ballerina/lang.value;
+import ballerina/log;
 import ballerina/os;
 import ballerina/sql;
 import ballerina/time;
@@ -35,11 +37,11 @@ type InputUser record {
     string password;
 };
 
-type UpdateUser record {
-    string name;
-    string oldPassword;
-    string newPassword;
-};
+type UpdateUser record {|
+    string name?;
+    string oldPassword?;
+    string newPassword?;
+|};
 
 type UserValid record {
     string email;
@@ -53,6 +55,11 @@ type ErrorDetails record {
 };
 
 type UserNotFound record {|
+    *http:NotFound;
+    ErrorDetails body;
+|};
+
+type ImageNotFound record {|
     *http:NotFound;
     ErrorDetails body;
 |};
@@ -81,6 +88,11 @@ service class RequestInterceptor {
     resource function 'default [string... path](
             http:RequestContext ctx, http:Request req)
         returns http:NotImplemented|http:Unauthorized|http:NextService|error? {
+
+        if (req.rawPath.includes("/users/image") && req.method == "GET") {
+            return ctx.next();
+        }
+
         string[] headers = req.getHeaderNames();
 
         var authorization = headers.filter(item => item.equalsIgnoreCaseAscii("authorization")).length();
@@ -135,43 +147,73 @@ service http:InterceptableService /users on new http:Listener(port) {
     }
 
     resource function put .(@http:Header string x_user_id, UpdateUser data) returns UserOK|UserNotFound|BadRequestError|error {
+        io:println(data.toJsonString());
+        string name = data.name ?: "";
+        string oldPassword = data.oldPassword ?: "";
+        string newPass = data.newPassword ?: "";
+        string sqlPasswordData = "";
 
-        if data.name.length() < 1 || data.oldPassword.length() < 1 || data.newPassword.length() < 1 {
-            BadRequestError badRequest = {
-                body: {message: "Validation Error", details: "Fields name, oldPassword and newPassword are required", timeStamp: time:utcToString(time:utcNow())}
-            };
-            return badRequest;
-        }
-
-        byte[] oldPasswordEncode = check crypto:hmacSha256(data.oldPassword.toBytes(), publicKey.toBytes());
-
-        stream<User, sql:Error?> userOldPasssowrdresult = userClientDb->query(`SELECT * FROM USERS WHERE id = ${x_user_id}`);
+        stream<User, sql:Error?> userOldPasssowrdresult = userClientDb->query(`SELECT * FROM USERS WHERE id = ${x_user_id}::uuid`);
 
         var user = check userOldPasssowrdresult.next();
 
         if user is () {
             UserNotFound userNotFound = {
-                body: {message: "Validation Error", details: "Username/password invalid", timeStamp: time:utcToString(time:utcNow())}
-            };
+                    body: {message: "Validation Error", details: "Username/password invalid", timeStamp: time:utcToString(time:utcNow())}
+                };
             return userNotFound;
         }
+        check userOldPasssowrdresult.close();
 
-        if user.value.password != oldPasswordEncode.toBase16() {
+        if oldPassword != "" && (newPass == "" || newPass.length() < 7) {
             BadRequestError badRequest = {
-                body: {message: "Validation Error", details: "Username/password invalid", timeStamp: time:utcToString(time:utcNow())}
+                body: {message: "Validation Error", details: "New password is required", timeStamp: time:utcToString(time:utcNow())}
             };
             return badRequest;
         }
 
-        byte[] newPasswordEncoded = check crypto:hmacSha256(data.newPassword.toBytes(), publicKey.toBytes());
+        if newPass != "" {
+            if newPass.length() < 7 {
+                BadRequestError badRequest = {
+                    body: {message: "Validation Error", details: "New password length must be at least 7 characters", timeStamp: time:utcToString(time:utcNow())}
+                };
+                return badRequest;
+            }
+            if oldPassword == "" {
+                BadRequestError badRequest = {
+                        body: {message: "Validation Error", details: "Old password is required", timeStamp: time:utcToString(time:utcNow())}
+                    };
+                return badRequest;
+            }
 
-        sql:ParameterizedQuery query = `UPDATE USERS SET NAME = ${data.name}, PASSWORD = ${newPasswordEncoded.toBase16()} WHERE ID = ${x_user_id}`;
+            byte[] oldPasswordEncode = check crypto:hmacSha256(oldPassword.toString().toBytes(), publicKey.toBytes());
+
+            if user.value.password != oldPasswordEncode.toBase16() {
+                BadRequestError badRequest = {
+                    body: {message: "Validation Error", details: "Username/password invalid", timeStamp: time:utcToString(time:utcNow())}
+                };
+                return badRequest;
+            }
+
+        }
+
+        name = name != user.value.name ? name : user.value.name;
+
+        if newPass != "" {
+            byte[] newPasswordEncoded = check crypto:hmacSha256(newPass.toString().toBytes(), publicKey.toBytes());
+            sqlPasswordData = newPasswordEncoded.toBase16();
+        } else {
+            sqlPasswordData = user.value.password;
+        }
+
+        sql:ParameterizedQuery query = `UPDATE USERS SET NAME = ${name}, PASSWORD = ${sqlPasswordData} WHERE ID = ${x_user_id}::uuid`;
         sql:ExecutionResult|error result = userClientDb->execute(query);
 
         if result is sql:ExecutionResult {
-            return {
-                body: {id: user.value.id, name: data.name, email: user.value.email}
+            UserOK userOk = {
+                body: {id: user.value.id, name: name, email: user.value.email}
             };
+            return userOk;
         }
         io:println(result.message());
         BadRequestError badRequest = {
@@ -180,5 +222,37 @@ service http:InterceptableService /users on new http:Listener(port) {
         return badRequest;
     }
 
+    resource function post avatar(@http:Header string x_user_id, http:Request request) returns http:Ok|BadRequestError|error? {
+        stream<byte[], io:Error?> streamer = check request.getByteStream();
+        string avatar_name = x_user_id + ".png";
+        check io:fileWriteBlocksFromStream("./files/" + avatar_name, streamer);
+        check streamer.close();
+
+        sql:ParameterizedQuery query = `UPDATE USERS SET avatar = ${avatar_name} WHERE ID = ${x_user_id}::uuid`;
+        sql:ExecutionResult|error result = userClientDb->execute(query);
+
+        if result is error {
+            log:printError("Erro ao realizar o update", result);
+            check file:remove("./files/" + avatar_name);
+            BadRequestError badResponse = {
+                body: {message: "File error", details: "Erro when update avatar.", timeStamp: ""}
+            };
+            return badResponse;
+        }
+
+        return http:OK;
+    }
+
+    resource function get image/[string file_name](http:Caller caller) returns error? {
+        byte[] fileBytes = check io:fileReadBytes("./files/" + file_name);
+
+        http:Response response = new;
+
+        response.setPayload(fileBytes);
+
+        response.setHeader("Content-Type", "image/png");
+
+        check caller->respond(response);
+    }
 };
 

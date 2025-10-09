@@ -37,4 +37,12 @@ jobs:
           version: 2201.12.9
 
       - name: Build users seervice
-        run: cd ./auth && bal build --cloud="docker"
+        run: cd ./auth && bal build
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./auth/tartget/docker/auth
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          tags: felipedb91/ignitegym-api-auth:v0.0.1

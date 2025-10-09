@@ -75,6 +75,17 @@ jobs:
           push: true
           tags: felipedb91/ignitegym-api-groups:v0.0.1
 
+      - name: Build users users
+        run: cd ./users && bal build --cloud="docker"
+
+      - name: Build and push users
+        uses: docker/build-push-action@v6
+        with:
+          context: ./users/target/docker/users
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: felipedb91/ignitegym-api-users:v0.0.1
+
       - name: Build users histories
         run: cd ./histories && bal build --cloud="docker"
 
@@ -86,13 +97,4 @@ jobs:
           push: true
           tags: felipedb91/ignitegym-api-histories:v0.0.1
 
-      - name: Build users users
-        run: cd ./users && bal build --cloud="docker"
-
-      - name: Build and push users
-        uses: docker/build-push-action@v6
-        with:
-          context: ./users/target/docker/users
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: felipedb91/ignitegym-api-users:v0.0.1
+      

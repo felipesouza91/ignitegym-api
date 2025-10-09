@@ -45,30 +45,54 @@ jobs:
       - name: Build users auth
         run: cd ./auth && bal build --cloud="docker"
 
-      - name: Push auth
-        run: docker push felipedb91/ignitegym-api-auth:v0.0.1
-          
+      - name: Build and push auth
+        uses: docker/build-push-action@v6
+        with:
+          context: ./auth/target/docker/auth
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: felipedb91/ignitegym-api-auth:v0.0.1
+
       - name: Build users exercises
         run: cd ./exercises && bal build --cloud="docker"
 
-      - name: Push exercises
-        run: docker push felipedb91/ignitegym-api-exercises:v0.0.1
+      - name: Build and push exercises
+        uses: docker/build-push-action@v6
+        with:
+          context: ./exercises/target/docker/exercises
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: felipedb91/ignitegym-api-exercises:v0.0.1
 
       - name: Build users groups
         run: cd ./groups && bal build --cloud="docker"
 
-      - name: Push groups
-        run: docker push felipedb91/ignitegym-api-groups:v0.0.1
+      - name: Build and push groups
+        uses: docker/build-push-action@v6
+        with:
+          context: ./groups/target/docker/groups
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: felipedb91/ignitegym-api-groups:v0.0.1
 
       - name: Build users histories
         run: cd ./histories && bal build --cloud="docker"
 
-      - name: Push histories
-        run: docker push elipedb91/ignitegym-api-histories:v0.0.1
+      - name: Build and push histories
+        uses: docker/build-push-action@v6
+        with:
+          context: ./histories/target/docker/histories
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: felipedb91/ignitegym-api-histories:v0.0.1
 
       - name: Build users users
         run: cd ./users && bal build --cloud="docker"
 
-      - name: Push users
-        run: docker push felipedb91/ignitegym-api-users:v0.0.1
-          
+      - name: Build and push users
+        uses: docker/build-push-action@v6
+        with:
+          context: ./users/target/docker/users
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: felipedb91/ignitegym-api-users:v0.0.1

@@ -2,3 +2,6 @@
 repository="felipedb91"
 name="ignitegym-api-exercises" 
 tag="v0.0.1" 
+
+[settings]
+buildImage=false

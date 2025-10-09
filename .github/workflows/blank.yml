@@ -37,7 +37,7 @@ jobs:
           version: 2201.12.9
 
       - name: Build users seervice
-        run: cd ./auth && bal build
+        run: cd ./auth && bal build --cloud="docker"
 
       - name: Build and push
         uses: docker/build-push-action@v6

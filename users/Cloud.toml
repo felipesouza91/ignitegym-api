@@ -1,6 +1,6 @@
 [container.image]
 repository="felipedb91"
-name="ignitegym-api-user" 
+name="ignitegym-api-users" 
 tag="v0.0.1" 
 
 [settings]

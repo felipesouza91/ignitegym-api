@@ -78,7 +78,7 @@ string publicKey = "282386943136351650900639271896622539368668649274605745825067
 
 table<User> key(id) users = table [];
 
-postgresql:Client userClientDb = check new (db_host, db_username, db_password, db_name, 5432);
+final postgresql:Client userClientDb = check new (db_host, db_username, db_password, db_name, 5432, connectionPool = ({maxConnectionLifeTime: 0, maxOpenConnections: 5, minIdleConnections: 1}));
 
 http:Client authClient = check new (auth_url);
 

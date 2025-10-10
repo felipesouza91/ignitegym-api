@@ -42,7 +42,7 @@ jobs:
         with:
           version: 2201.12.9
 
-      - name: Build users auth
+      - name: Build  auth
         run: cd ./auth && bal build --cloud="docker"
 
       - name: Build and push auth
@@ -53,7 +53,7 @@ jobs:
           push: true
           tags: felipedb91/ignitegym-api-auth:v0.0.1
 
-      - name: Build users exercises
+      - name: Build  exercises
         run: cd ./exercises && bal build --cloud="docker"
 
       - name: Build and push exercises
@@ -64,7 +64,7 @@ jobs:
           push: true
           tags: felipedb91/ignitegym-api-exercises:v0.0.1
 
-      - name: Build users groups
+      - name: Build  groups
         run: cd ./groups && bal build --cloud="docker"
 
       - name: Build and push groups
@@ -75,7 +75,7 @@ jobs:
           push: true
           tags: felipedb91/ignitegym-api-groups:v0.0.1
 
-      - name: Build users users
+      - name: Build  users
         run: cd ./users && bal build --cloud="docker"
 
       - name: Build and push users
@@ -86,13 +86,16 @@ jobs:
           push: true
           tags: felipedb91/ignitegym-api-users:v0.0.1
 
-      - name: Build users histories
+      - name: Build histories
         run: cd ./histories && bal build --cloud="docker"
+      
+      - name: LS  histories
+        run: ll ./histories
 
       - name: Build and push histories
         uses: docker/build-push-action@v6
         with:
-          context: ./histories/target/docker/histories
+          context: ./histories/target/docker/historys
           platforms: linux/amd64,linux/arm64
           push: true
           tags: felipedb91/ignitegym-api-histories:v0.0.1

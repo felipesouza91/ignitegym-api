@@ -8,6 +8,7 @@ import ballerina/time;
 import ballerina/uuid;
 import ballerinax/postgresql;
 import ballerinax/postgresql.driver as _;
+import ballerina/log;
 
 configurable int port = ?;
 
@@ -368,6 +369,7 @@ isolated function createToken(string userId) returns string {
 
     string|jwt:Error jwt = jwt:issue(issuerConfig);
     if jwt is jwt:Error {
+        log:printError(jwt);
         io:print(jwt);
         return "";
     }

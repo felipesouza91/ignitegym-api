@@ -369,7 +369,7 @@ isolated function createToken(string userId) returns string {
 
     string|jwt:Error jwt = jwt:issue(issuerConfig);
     if jwt is jwt:Error {
-        log:printError(jwt);
+        log:printError(jwt.toString());
         io:print(jwt);
         return "";
     }

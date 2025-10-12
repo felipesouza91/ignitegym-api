@@ -301,6 +301,7 @@ service /auth on new http:Listener(port) {
         var refreshToken = check refreshTokenResult.next();
 
         if refreshToken is () {
+            check refreshTokenResult.close();
             AppBadRequestError badRequest = {
                 body: {message: "Refresh Token Error", details: "Refresh token not found", timeStamp: time:utcToString(time:utcNow())}
             };
@@ -330,7 +331,7 @@ service /auth on new http:Listener(port) {
             return badRequest;
         }
 
-        var resultDelete = userClientDb->execute(`DELETE FROM refresh_tokens WHERE refresh_token = ${new_refresh_token.refresh_token}`);
+        var resultDelete = userClientDb->execute(`DELETE FROM refresh_tokens WHERE refresh_token = ${data.refresh_token}`);
 
         if resultDelete is sql:Error {
             io:println(resultDelete.message());

@@ -345,7 +345,6 @@ service /auth on new http:Listener(port) {
         AppTokenReponse response = {
             body: {token: jwt, refresh_token: new_refresh_token.refresh_token}
         };
-        check userClientDb.close();
 
         return response;
 
